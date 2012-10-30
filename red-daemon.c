@@ -4,14 +4,11 @@
 #include <stdbool.h>
 #include <errno.h>
 
-#include <unistd.h>
 #include <getopt.h>
 #include <syslog.h>
 
-#include <sys/types.h>
 #include <sys/stat.h>
 
-#include <microhttpd.h>
 #include <glib/gi18n.h>
 
 #include "red-engine.h"
@@ -19,14 +16,15 @@
 #define RED_IDENT "red-engine"
 
 char *prog_name;
-long int port = 80;
+int port = 80;
 int daemonize = true;
-struct MHD_Daemon *red_mhd_daemon;
+struct MHD_Daemon *mhd_daemon;
 
 static void parse_options (int, char **);
 static void become_daemon (void);
-static void red_shutdown (int);
+static void stop_daemon (int);
 
+/* The red-engine daemon.  */
 int
 main (int argc, char **argv)
 {
@@ -48,33 +46,41 @@ main (int argc, char **argv)
   if (daemonize)
     become_daemon ();
 
+  /* TODO: Once init is finished, pass a proper DB filename.  */
+  if (red_init (NULL) < 0)
+    {
+      syslog (LOG_ERR, _("Unable to initialize redirect engine.\n"));
+      closelog ();
+      exit (EXIT_FAILURE);
+    }
+
   /* Ask MicroHTTPD to start listening.  */
 
+  mhd_daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY,
+                                 port,
+                                 NULL, /* Accept policy callback.  */
+                                 NULL, /* Accept policy cb arg.  */
+                                 &red_handler, /* Handler callback.  */
+                                 NULL, /* Handler cb arg.  */
+                                 MHD_OPTION_END);
 
-  red_mhd_daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY,
-                                     port,
-                                     NULL, /* Accept policy callback.  */
-                                     NULL, /* Accept policy cb arg.  */
-                                     &red_handler, /* Handler callback.  */
-                                     NULL, /* Handler cb arg.  */
-                                     MHD_OPTION_END);
-
-  if (red_mhd_daemon == NULL)
+  if (mhd_daemon == NULL)
     {
       syslog (LOG_ERR, _("Unable to start microhttpd daemon.\n"));
       closelog ();
       exit (EXIT_FAILURE);
     }
 
-  syslog (LOG_NOTICE, _("Started listening.\n"));
+  syslog (LOG_NOTICE, _("Started listening on port %d.\n"), port);
 
   /* Wait for termination.  */
-  signal (SIGTERM, red_shutdown);
-  signal (SIGINT, red_shutdown); /* Ctrl+C when not running as a daemon.  */
+  signal (SIGTERM, stop_daemon);
+  signal (SIGINT, stop_daemon); /* Ctrl+C when not running as a daemon.  */
   pause ();
 
   exit (EXIT_FAILURE); /* Never happens.  */
 }
+
 
 /* Handle/validate command-line arguments:  */
 static void
@@ -135,6 +141,7 @@ parse_options (int argc, char **argv)
   return;
 }
 
+
 /* Daemonize this process.  */
 static void
 become_daemon (void)
@@ -152,6 +159,7 @@ become_daemon (void)
     return;
 
   pid = fork ();
+  /* PID is -1 when a `fork' fails.  */
   if (pid < 0)
     {
       syslog (LOG_ERR, _("Error calling `fork': '%s'\n"), strerror (errno));
@@ -177,6 +185,7 @@ become_daemon (void)
       exit(EXIT_FAILURE);
     }
 
+  /* Be quiet.  */
   freopen ("/dev/null", "r", stdin);
   freopen ("/dev/null", "w", stdout);
   freopen ("/dev/null", "w", stderr);
@@ -184,12 +193,21 @@ become_daemon (void)
   return;
 }
 
+
 /* Shut down cleanly.  */
 static void
-red_shutdown (int sig)
+stop_daemon (int sig)
 {
   syslog (LOG_NOTICE, _("Stopping.\n"));
-  MHD_stop_daemon (red_mhd_daemon);
+  MHD_stop_daemon (mhd_daemon);
+  
+  if (red_terminate () < 0)
+    {
+      syslog (LOG_ERR, _("Unable to terminate redirect engine.\n"));
+      closelog ();
+      exit (EXIT_FAILURE);
+    }
+
   closelog ();
   exit (EXIT_SUCCESS);
 }

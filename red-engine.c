@@ -1,7 +1,89 @@
+#include "red-engine.h"
+
 #include <string.h>
-#include <microhttpd.h>
+#include <syslog.h>
+#include <db.h>
+#include <glib/gi18n.h>
+
+
+#define LOG_AND_RET(err_str, ret_val) \
+do { syslog (LOG_ERR, _(err_str)); return ret_val; } while (0)
 
 /* The core of the redirect engine.  */
+
+static DB_ENV *db_env;
+static DB *db;
+
+/* An HTTP 403 - 'Method Not Allowed' response. For requests other than GET
+and HEAD.  */
+#define BODY_MNA "<html><head><title>405 Method Not Allowed</title>" \
+                 "</head><body>Method Not Allowed</body></html>"
+
+static struct MHD_Response *response_MNA = NULL;
+
+
+/* Initializes the redirect engine. Returns 0 on success, -1 on error. */
+int
+red_init (const char * db_filename)
+{
+/* TODO: Integrate this.  */
+#if 0
+  if ( (! db_filename)
+       || (db_filename[0] == '\0'))
+    LOG_AND_RET ("Invalid DB file name.\n", -1);
+
+  /* Set up a concurrent Berkeley DB environment.  */
+
+  if (db_env_create (&db_env, 0))
+    LOG_AND_RET ("Error calling `db_env_create'.\n", -1);
+
+  if (db_env->open (db_env,
+                    NULL,
+                    DB_INIT_CDB | DB_INIT_MPOOL /* Concurrent data access.  */
+                    | DB_CREATE,
+                    0))
+    LOG_AND_RET ("Error calling `db_env->open'.\n", -1);
+
+  if (db_create (&db, db_env, 0))
+    LOG_AND_RET ("Error calling `db_create'.\n", -1);
+
+  if (db->open (db, NULL, db_filename, NULL, DB_BTREE,
+                DB_CREATE | DB_THREAD,
+                0))
+    LOG_AND_RET ("Error calling `db->open'.\n", -1);
+#endif
+
+  /* Prep a canned 403 'Method Not Allowed' response.  */
+  response_MNA = MHD_create_response_from_buffer (strlen (BODY_MNA),
+                                                  BODY_MNA,
+                                                  MHD_RESPMEM_PERSISTENT);
+
+  return 0;
+}
+
+
+/* Terminates the redirect engine. Returns 0 on success, -1 on erroring out. */
+int
+red_terminate (void)
+{
+  /* Destroy canned responses.  */
+
+  MHD_destroy_response (response_MNA);
+
+/* TODO: Integrate this.  */
+#if 0
+  /* Close the Berkeley DB environment.  */
+
+  if (db->close (db, 0))
+    LOG_AND_RET ("Error calling `db->close'.\n", -1);
+
+  if (db_env->close (db_env, 0))
+    LOG_AND_RET ("Error calling `db_env->close'.\n", -1);
+#endif
+
+  return 0;
+}
+
 
 /* An MHD_AccessHandlerCallback for the redirect engine.
 MicroHTTPD will forward requests here.  */
@@ -18,13 +100,14 @@ red_handler (void *cls,
   struct MHD_Response *response;
   int ret;
 
-  /* We only support redirecting GET and HEAD requests.  */
+  /* We only support GET and HEAD requests.  */
   if (strcmp (method, MHD_HTTP_METHOD_GET)
       && strcmp (method, MHD_HTTP_METHOD_HEAD))
     {
-      /* TODO: Return an appropriate response code instead of rudely closing
-      the socket.  */
-      return MHD_NO;
+      ret = MHD_queue_response (connection,
+                                MHD_HTTP_METHOD_NOT_ALLOWED,
+                                response_MNA);
+      return ret;
     }
 
   /* TODO: This is just a placeholder which returns a sane response.  */
