@@ -15,26 +15,20 @@
 
 #define RED_IDENT "red-engine"
 
+struct red_conf
+{
+  unsigned short port;
+  char *home_dir;
+};
+
+
 /* Initializes the redirect engine. Returns 0 on success, -1 on error. */
 extern int
-red_init (const char * home_dir);
+red_init (const struct red_conf conf);
 
 
 /* Terminates the redirect engine. Returns 0 on success, -1 on erroring out. */
 extern int
 red_terminate (void);
-
-
-/* The permanent redirect handler. Must be registered with MHD when starting
-the MHD daemon.  */
-extern int
-red_handler (void *cls,
-             struct MHD_Connection *connection,
-             const char *url,
-             const char *method,
-             const char *version,
-             const char *upload_data,
-             size_t *upload_data_size,
-             void **con_cls);
 
 #endif

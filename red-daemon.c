@@ -14,13 +14,13 @@
 #include "red-engine.h"
 
 /* Configuration, populated by `parse_options'.  */
-char *prog_name;
-int port = 80;
-char *home_dir = "/var/lib/" RED_IDENT;
-int daemonize = true;
-
-/* Handle for MicroHTTPD.  */
-struct MHD_Daemon *mhd_daemon;
+static char *prog_name;
+static int daemonize = true;
+static struct red_conf conf =
+{
+  .port = 80,
+  .home_dir = "/var/lib/" RED_IDENT,
+};
 
 static void parse_options (int, char **);
 static void become_daemon (void);
@@ -48,31 +48,12 @@ main (int argc, char **argv)
   if (daemonize)
     become_daemon ();
 
-  if (red_init (home_dir) < 0)
+  if (red_init (conf) < 0)
     {
       syslog (LOG_ERR, _("Unable to initialize redirect engine.\n"));
       closelog ();
       exit (EXIT_FAILURE);
     }
-
-  /* Ask MicroHTTPD to start listening.  */
-
-  mhd_daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY,
-                                 port,
-                                 NULL, /* Accept policy callback.  */
-                                 NULL, /* Accept policy cb arg.  */
-                                 &red_handler, /* Handler callback.  */
-                                 NULL, /* Handler cb arg.  */
-                                 MHD_OPTION_END);
-
-  if (mhd_daemon == NULL)
-    {
-      syslog (LOG_ERR, _("Unable to start microhttpd daemon.\n"));
-      closelog ();
-      exit (EXIT_FAILURE);
-    }
-
-  syslog (LOG_NOTICE, _("Started listening on port %d.\n"), port);
 
   /* Wait for termination.  */
   signal (SIGTERM, stop_daemon);
@@ -115,11 +96,11 @@ parse_options (int argc, char **argv)
 
           case 'p':
             errno = 0;
-            port = strtol(optarg, &unparsed_int_string, 10);
+            conf.port = strtol(optarg, &unparsed_int_string, 10);
             if (errno
                 || *unparsed_int_string
                 || unparsed_int_string == optarg
-                || port < 1)
+                || conf.port < 1)
               {
                 fprintf (stderr, _("%s: Invalid port number '%s'.\n"),
                          prog_name, optarg);
@@ -128,7 +109,7 @@ parse_options (int argc, char **argv)
             break;
 
           case 'h':
-            home_dir = optarg;
+            conf.home_dir = optarg;
             break;
 
           case '?':
@@ -205,7 +186,6 @@ static void
 stop_daemon (int sig)
 {
   syslog (LOG_NOTICE, _("Stopping.\n"));
-  MHD_stop_daemon (mhd_daemon);
   
   if (red_terminate () < 0)
     {

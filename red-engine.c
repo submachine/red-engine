@@ -7,10 +7,14 @@
 
 
 #define LOG_AND_RET(err_str, ret_val) \
-do { syslog (LOG_ERR, _(err_str)); return ret_val; } while (0)
+do { syslog (LOG_ERR, "%s: %s\n", __func__, _(err_str)); return ret_val; } while (0)
 
 /* The core of the redirect engine.  */
 
+/* Handle for MicroHTTPD.  */
+struct MHD_Daemon *mhd_daemon;
+
+/* Handles for Berkeley DB.  */
 static DB_ENV *db_env;
 static DB *db;
 
@@ -21,49 +25,23 @@ and HEAD.  */
 
 static struct MHD_Response *response_MNA = NULL;
 
+static int init_mhd_daemon (const struct red_conf conf);
+static int init_db (const struct red_conf conf);
 
 /* Initializes the redirect engine. Returns 0 on success, -1 on error. */
 int
-red_init (const char * home_dir)
+red_init (const struct red_conf conf)
 {
-  char * db_filename;
-
-  if ( (! home_dir)
-       || (home_dir == '\0'))
-    LOG_AND_RET ("Invalid home directory.\n", -1);
-
-  db_filename = malloc (strlen (home_dir)
-                        + strlen ("/" RED_IDENT ".db")
-                        + 1);
-  strcpy (db_filename, home_dir);
-  strcat (db_filename, "/" RED_IDENT ".db");
-
-  syslog (LOG_INFO, "DB File is at %s.\n", db_filename);
-
-  /* Set up a concurrent Berkeley DB environment.  */
-
-  if (db_env_create (&db_env, 0))
-    LOG_AND_RET ("Error calling `db_env_create'.\n", -1);
-
-  if (db_env->open (db_env,
-                    NULL,
-                    DB_INIT_CDB | DB_INIT_MPOOL /* Concurrent data access.  */
-                    | DB_THREAD | DB_CREATE,
-                    0))
-    LOG_AND_RET ("Error calling `db_env->open'.\n", -1);
-
-  if (db_create (&db, db_env, 0))
-    LOG_AND_RET ("Error calling `db_create'.\n", -1);
-
-  if (db->open (db, NULL, db_filename, NULL, DB_BTREE,
-                DB_CREATE | DB_THREAD,
-                0))
-    LOG_AND_RET ("Error calling `db->open'.\n", -1);
+  if (init_db (conf) < 0)
+    LOG_AND_RET ("Unable to setup DB environment.", -1);
 
   /* Prep a canned 403 'Method Not Allowed' response.  */
   response_MNA = MHD_create_response_from_buffer (strlen (BODY_MNA),
                                                   BODY_MNA,
                                                   MHD_RESPMEM_PERSISTENT);
+
+  if (init_mhd_daemon (conf) < 0)
+    LOG_AND_RET ("Unable to start microhttpd daemon.", -1);
 
   return 0;
 }
@@ -73,17 +51,19 @@ red_init (const char * home_dir)
 int
 red_terminate (void)
 {
-  /* Destroy canned responses.  */
+  /* Stop MHD daemon.  */
+  MHD_stop_daemon (mhd_daemon);
 
+  /* Destroy canned responses.  */
   MHD_destroy_response (response_MNA);
 
   /* Close the Berkeley DB environment.  */
 
   if (db->close (db, 0))
-    LOG_AND_RET ("Error calling `db->close'.\n", -1);
+    LOG_AND_RET ("Error calling `db->close'.", -1);
 
   if (db_env->close (db_env, 0))
-    LOG_AND_RET ("Error calling `db_env->close'.\n", -1);
+    LOG_AND_RET ("Error calling `db_env->close'.", -1);
 
   return 0;
 }
@@ -91,7 +71,7 @@ red_terminate (void)
 
 /* An MHD_AccessHandlerCallback for the redirect engine.
 MicroHTTPD will forward requests here.  */
-int
+static int
 red_handler (void *cls,
              struct MHD_Connection *connection,
              const char *url,
@@ -119,4 +99,67 @@ red_handler (void *cls,
   ret = MHD_queue_response (connection, MHD_HTTP_SERVICE_UNAVAILABLE, response);
   MHD_destroy_response (response);
   return ret;
+}
+
+
+static int
+init_db (const struct red_conf conf)
+{
+  char * db_filename;
+
+  /* Verify and prep DB path.  */
+
+  if ( (! conf.home_dir)
+       || (conf.home_dir == '\0'))
+    LOG_AND_RET ("Invalid home directory.", -1);
+
+  db_filename = malloc (strlen (conf.home_dir)
+                        + strlen ("/" RED_IDENT ".db")
+                        + 1);
+  strcpy (db_filename, conf.home_dir);
+  strcat (db_filename, "/" RED_IDENT ".db");
+
+  /* Set up a concurrent Berkeley DB environment.  */
+
+  if (db_env_create (&db_env, 0))
+    LOG_AND_RET ("Error calling `db_env_create'.", -1);
+
+  if (db_env->open (db_env,
+                    NULL,
+                    DB_INIT_CDB | DB_INIT_MPOOL /* Concurrent data access.  */
+                    | DB_THREAD | DB_CREATE,
+                    0))
+    LOG_AND_RET ("Error calling `db_env->open'.", -1);
+
+  if (db_create (&db, db_env, 0))
+    LOG_AND_RET ("Error calling `db_create'.", -1);
+
+  if (db->open (db, NULL, db_filename, NULL, DB_BTREE,
+                DB_CREATE | DB_THREAD,
+                0))
+    LOG_AND_RET ("Error calling `db->open'.", -1);
+
+  syslog (LOG_NOTICE, _("Opened DB file %s.\n"), db_filename);
+  return 0;
+}
+
+
+static int
+init_mhd_daemon (const struct red_conf conf)
+{
+  /* Ask MicroHTTPD to start listening.  */
+
+  mhd_daemon = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY,
+                                 conf.port,
+                                 NULL, /* Accept policy callback.  */
+                                 NULL, /* Accept policy cb arg.  */
+                                 &red_handler, /* Handler callback.  */
+                                 NULL, /* Handler cb arg.  */
+                                 MHD_OPTION_END);
+
+  if (mhd_daemon == NULL)
+    return -1;
+
+  syslog (LOG_NOTICE, _("Started listening on port %d.\n"), conf.port);
+  return 0;
 }
