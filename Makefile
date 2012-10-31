@@ -3,8 +3,8 @@ RED_SOURCE = red-engine.c red-daemon.c
 RED_HEADER = red-engine.h
 
 CFLAGS += -Wall -O2 -std=c99 -pedantic
-CFLAGS += $(shell pkg-config --cflags libmicrohttpd glib-2.0)
-LIBS   += $(shell pkg-config --libs libmicrohttpd glib-2.0)
+CFLAGS += $(shell pkg-config --cflags libmicrohttpd)
+LIBS   += $(shell pkg-config --libs libmicrohttpd)
 LIBS   += -ldb
 
 .PHONY: all clean install uninstall

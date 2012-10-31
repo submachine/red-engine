@@ -8,8 +8,7 @@
 #include <syslog.h>
 
 #include <sys/stat.h>
-
-#include <glib/gi18n.h>
+#include <signal.h>
 
 #include "red-engine.h"
 

@@ -13,6 +13,9 @@
 #define MHD_PLATFORM_H
 #include <microhttpd.h>
 
+#include <libintl.h>
+#define _(x) gettext(x)
+
 #define RED_IDENT "red-engine"
 
 struct red_conf
