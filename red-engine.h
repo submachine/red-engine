@@ -13,9 +13,11 @@
 #define MHD_PLATFORM_H
 #include <microhttpd.h>
 
+#define RED_IDENT "red-engine"
+
 /* Initializes the redirect engine. Returns 0 on success, -1 on error. */
 extern int
-red_init (const char * db_filename);
+red_init (const char * home_dir);
 
 
 /* Terminates the redirect engine. Returns 0 on success, -1 on erroring out. */

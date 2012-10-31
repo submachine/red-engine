@@ -13,18 +13,20 @@
 
 #include "red-engine.h"
 
-#define RED_IDENT "red-engine"
-
+/* Configuration, populated by `parse_options'.  */
 char *prog_name;
 int port = 80;
+char *home_dir = "/var/lib/" RED_IDENT;
 int daemonize = true;
+
+/* Handle for MicroHTTPD.  */
 struct MHD_Daemon *mhd_daemon;
 
 static void parse_options (int, char **);
 static void become_daemon (void);
 static void stop_daemon (int);
 
-/* The red-engine daemon.  */
+/* The `red-engine' daemon.  */
 int
 main (int argc, char **argv)
 {
@@ -46,8 +48,7 @@ main (int argc, char **argv)
   if (daemonize)
     become_daemon ();
 
-  /* TODO: Once init is finished, pass a proper DB filename.  */
-  if (red_init (NULL) < 0)
+  if (red_init (home_dir) < 0)
     {
       syslog (LOG_ERR, _("Unable to initialize redirect engine.\n"));
       closelog ();
@@ -89,6 +90,7 @@ parse_options (int argc, char **argv)
   static struct option long_options[] =
     {
       {"port", required_argument, NULL, 'p'}, /* Port to listen on.  */
+      {"home-dir", required_argument, NULL, 'h'}, /* Working Directory.  */
       {"nodaemon", no_argument, &daemonize, false}, /* Don't daemonize.  */
       {0, 0, 0, 0}
     };
@@ -123,6 +125,10 @@ parse_options (int argc, char **argv)
                          prog_name, optarg);
                 exit (EXIT_FAILURE);
               }
+            break;
+
+          case 'h':
+            home_dir = optarg;
             break;
 
           case '?':

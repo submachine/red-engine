@@ -24,13 +24,21 @@ static struct MHD_Response *response_MNA = NULL;
 
 /* Initializes the redirect engine. Returns 0 on success, -1 on error. */
 int
-red_init (const char * db_filename)
+red_init (const char * home_dir)
 {
-/* TODO: Integrate this.  */
-#if 0
-  if ( (! db_filename)
-       || (db_filename[0] == '\0'))
-    LOG_AND_RET ("Invalid DB file name.\n", -1);
+  char * db_filename;
+
+  if ( (! home_dir)
+       || (home_dir == '\0'))
+    LOG_AND_RET ("Invalid home directory.\n", -1);
+
+  db_filename = malloc (strlen (home_dir)
+                        + strlen ("/" RED_IDENT ".db")
+                        + 1);
+  strcpy (db_filename, home_dir);
+  strcat (db_filename, "/" RED_IDENT ".db");
+
+  syslog (LOG_INFO, "DB File is at %s.\n", db_filename);
 
   /* Set up a concurrent Berkeley DB environment.  */
 
@@ -40,7 +48,7 @@ red_init (const char * db_filename)
   if (db_env->open (db_env,
                     NULL,
                     DB_INIT_CDB | DB_INIT_MPOOL /* Concurrent data access.  */
-                    | DB_CREATE,
+                    | DB_THREAD | DB_CREATE,
                     0))
     LOG_AND_RET ("Error calling `db_env->open'.\n", -1);
 
@@ -51,7 +59,6 @@ red_init (const char * db_filename)
                 DB_CREATE | DB_THREAD,
                 0))
     LOG_AND_RET ("Error calling `db->open'.\n", -1);
-#endif
 
   /* Prep a canned 403 'Method Not Allowed' response.  */
   response_MNA = MHD_create_response_from_buffer (strlen (BODY_MNA),
@@ -70,8 +77,6 @@ red_terminate (void)
 
   MHD_destroy_response (response_MNA);
 
-/* TODO: Integrate this.  */
-#if 0
   /* Close the Berkeley DB environment.  */
 
   if (db->close (db, 0))
@@ -79,7 +84,6 @@ red_terminate (void)
 
   if (db_env->close (db_env, 0))
     LOG_AND_RET ("Error calling `db_env->close'.\n", -1);
-#endif
 
   return 0;
 }
@@ -116,4 +120,3 @@ red_handler (void *cls,
   MHD_destroy_response (response);
   return ret;
 }
-
