@@ -156,6 +156,7 @@ init_canned_responses (void)
   return;
 }
 
+
 static void
 destroy_canned_responses (void)
 {
@@ -167,6 +168,7 @@ destroy_canned_responses (void)
 
   return;
 }
+
 
 /* An MHD_AccessHandlerCallback for the redirect engine.
 MicroHTTPD will forward requests here.  */

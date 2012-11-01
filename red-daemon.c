@@ -1,3 +1,5 @@
+#include "red-engine.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,8 +11,6 @@
 
 #include <sys/stat.h>
 #include <signal.h>
-
-#include "red-engine.h"
 
 /* Configuration, populated by `parse_options'.  */
 static char *prog_name;
@@ -76,6 +76,7 @@ parse_options (int argc, char **argv)
     };
   int option;
   char *unparsed_int_string;
+  long path_size;
 
   prog_name = argv[0];
 
@@ -108,15 +109,48 @@ parse_options (int argc, char **argv)
             break;
 
           case 'h':
-            conf.home_dir = optarg;
+
+            /* Store the absolute path corresponding to the --home-dir
+            argument.  */
+
+            /* An ugly way to find out how big our absolute path buffer
+            should be.  */
+            errno = 0;
+            path_size = pathconf ("/", _PC_PATH_MAX) + 2;
+
+            if ( (path_size < 0) && errno)
+              {
+                /* An error occured.  */
+                fprintf (stderr, _("%s: Error calling `pathconf': '%s'\n"),
+                         prog_name, strerror (errno));
+                exit (EXIT_FAILURE);
+              }
+
+            if (path_size < 0)
+              {
+                /* No limit set. Set something big.  */
+                path_size = 2048;
+              }
+
+            conf.home_dir = malloc (path_size);
+
+            /* Finally, `realpath' gets the absolute path.  */
+            if (! realpath (optarg, conf.home_dir))
+              {
+                fprintf (stderr, _("%s: Error calling `realpath': '%s'\n"),
+                         prog_name, strerror (errno));
+                exit (EXIT_FAILURE);
+              }
             break;
 
           case '?':
             /* Something went wrong and `getopt' threw an error already.  */
             exit (EXIT_FAILURE);
+            break;
 
           default:
             abort ();
+            break;
         }
     }
   if (optind < argc)
@@ -192,6 +226,8 @@ stop_daemon (int sig)
       closelog ();
       exit (EXIT_FAILURE);
     }
+
+  free (conf.home_dir);
 
   closelog ();
   exit (EXIT_SUCCESS);
