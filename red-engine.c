@@ -209,7 +209,7 @@ init_db (const struct red_conf conf)
 {
   /* Verify DB path.  */
   if ( (! conf.home_dir)
-       || (conf.home_dir == '\0'))
+       || (conf.home_dir[0] == '\0'))
     LOG_AND_RET ("Invalid home directory.", -1);
 
   /* Set up a concurrent Berkeley DB environment.  */
